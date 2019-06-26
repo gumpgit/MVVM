@@ -1,17 +1,17 @@
 // 基类
 
 // 观察者 (发布订阅)
-class Dep { 
+class Dep {
   constructor() {
-    this.subs = [];  // 存放所有的watcher
+    this.subs = []; // 存放所有的watcher
   }
   // 订阅
-  addSub(watcher) { 
+  addSub(watcher) {
     this.subs.push(watcher);
   }
 
   // 发布
-  notify() { 
+  notify() {
     this.subs.forEach(watcher => watcher.update());
   }
 }
@@ -27,16 +27,16 @@ class Watcher {
   }
   get() {
     // 先把自己放再this上
-    Dep.target = this;  
+    Dep.target = this;
     // 取值 把这个观察者和数据关联起来
     let value = CompileUtil.getVal(this.vm, this.expr);
-    Dep.target = null;
+    Dep.target = null; // 如不取消 任何值取值 都会添加watcher
     return value;
   }
-  update() { 
+  update() {
     // 跟新操作 数据变化后 会调用观察值的udpate 方法
     let newVal = CompileUtil.getVal(this.vm, this.expr);
-    if (newVal !== this.oldValue) { 
+    if (newVal !== this.oldValue) {
       this.cb(newVal);
     }
   }
@@ -45,7 +45,7 @@ class Watcher {
 // 数据劫持
 class Observer {
   constructor(data) {
-    this.observer(data);    
+    this.observer(data);
 
   }
   observer(data) {
@@ -85,13 +85,11 @@ class Compiler {
     this.el = this.isElementNode(el) ? el : document.querySelector(el);
     //console.log(this.vm, this.el);
     this.vm = vm;
-
     // 把当前节点元素获取放入内存中
     let fragment = this.node2fragment(this.el);
     // console.log(fragment);
 
     // 把节点中的内容进行替换
-
     // 编译模板 用数据编译
     this.compile(fragment);
 
@@ -116,9 +114,11 @@ class Compiler {
       // 判断是不是指令 //v-
       if (this.isDirective(name)) { // v-model v-html v-bind
         // console.log(node, 'element');
-        let [, directive] = name.split('-');
-        // 需要调用不同的指令来处理     
-        CompileUtil[directive](node, expr, this.vm);
+        let [, directive] = name.split('-'); // v-on:click
+        let [directiveName, eventName] = directive.split(':');
+
+        // 需要调用不同的指令来处理
+        CompileUtil[directiveName](node, expr, this.vm, eventName);
       }
     })
   }
@@ -129,10 +129,9 @@ class Compiler {
     let content = node.textContent;
     // console.log(content);
     if (/\{\{(.+?)\}\}/.test(content)) {
-      console.log(content, 'text'); // 找到所有文本
+      //console.log(content, 'text'); // 找到所有文本
       // 文本节点
       CompileUtil['text'](node, content, this.vm);
-
     }
   }
 
@@ -141,7 +140,6 @@ class Compiler {
   compile(node) {
     let chaildNodes = node.childNodes;
     // console.log(chaildNodes);
-
     [...chaildNodes].forEach(child => {
       if (this.isElementNode(child)) {
         //console.log('element', child);
@@ -177,10 +175,19 @@ class Compiler {
 
 CompileUtil = {
   // 根据表达式获取对应的数据
-  getVal(vm, expr) { // vm.$data  'school.name'
+  getVal(vm, expr) { // vm.$data  'school.name' 
     return expr.split('.').reduce((data, current) => {
       return data[current];
-    }, vm.$data)
+    }, vm.$data);
+  },
+  setVal(vm, expr, value) { // vm.$data  'school.name' = 'xxx'
+    return expr.split('.').reduce((data, current, index, arr) => {
+      if (index == arr.length - 1) {
+        return data[current] = value;
+      }
+      return data[current];
+    }, vm.$data);
+
   },
   model(node, expr, vm) { // node是节点 expr是表达式 vm是当前实例
     // 给输入框赋予value 属性 node.value = xxx
@@ -191,25 +198,35 @@ CompileUtil = {
     new Watcher(vm, expr, (newVal) => {
       fn(node, newVal);
     });
-
+ 
     let value = this.getVal(vm, expr);
-    // console.log(value)
+    fn(node, value);
   },
-  html() {
-    // node.innerHTML = xxx
+  html(node, expr, vm) { // v-html  
+    let fn = this.updater['htmlUpdater'];
+    new Watcher(vm, expr, (newVal) => {
+      fn(node, newVal);
+    });
+    let value = this.getVal(vm, expr);
+    fn(node, value);
   },
-  getContentValue(vm, expr) { 
+  getContentValue(vm, expr) {
     // 便利表达式 将内容 重新替换成一个完整的内容 返回
     return expr.replace(/\{\{(.+?)\}\}/g, (...args) => {
-      return this.getVal(vm,args[1]);
+      return this.getVal(vm, args[1]);
     });
+  },
+  on(node, expr, vm, eventName) {
+    node.addEventListener(eventName, (e) => {
+      vm[expr].call(vm, e);
+    })
   },
   text(node, expr, vm) { // expr => {{a}} {{b}} {{c}}
     let fn = this.updater['textUpdater'];
     let content = expr.replace(/\{\{(.+?)\}\}/g, (...args) => {
       // 给表达式 每个变量 加上观察者
       new Watcher(vm, args[1], (newVal) => {
-        fn(node,this.getContentValue(vm,expr)); // 返回一个全的字符串
+        fn(node, this.getContentValue(vm, expr)); // 返回一个全的字符串
       });
       return this.getVal(vm, args[1]);
     });
@@ -220,8 +237,8 @@ CompileUtil = {
     modelUpdater(node, value) {
       node.value = value;
     },
-    htmlUpdater() {
-
+    htmlUpdater(node, value) { // xss攻击
+      node.innerHTML = value;
     },
     // 处理文本节点
     textUpdater(node, value) {
@@ -236,14 +253,45 @@ class Vue {
   constructor(options) {
     this.$el = options.el;
     this.$data = options.data;
-
+    let methods = options.methods;
+    let computed = options.computed;
     //根元素 存在 编译模板
     if (this.$el) {
       new Observer(this.$data);
+      for (let key in methods) {
+        Object.defineProperty(this, key, {
+          get() {
+            return methods[key];
+          }
+        })
+      }
 
-      console.log(this.$data);
-
+      // {{getNewName}} reduce vm.$data.getName
+      for (let key in computed) {
+        Object.defineProperty(this.$data, key, { // 有依赖关系的 数据
+          get: () => {
+            return computed[key].call(this);
+          }
+        })
+      }
+      // 把数据获取操作 vm上的取值操作 都代理到 vm.$data
+      this.proxyVm(this.$data);
       new Compiler(this.$el, this);
     }
   }
+
+  // 实现可以通过 vm取对于$data的内容
+  proxyVm(data) {
+    for (let key in data) {
+      Object.defineProperty(this, key, {
+        get() {
+          return data[key]
+        },
+        set(newVal) {
+          data[key] = newVal;
+        }
+      })
+    }
+  }
+
 }

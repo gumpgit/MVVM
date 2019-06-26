@@ -1,37 +1,53 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="X-UA-Compatible" content="ie=edge">
   <title>MVVM</title>
 </head>
+
 <body>
   <div id="app">
     <input type="text" v-model="school.name">
     <div>{{school.name}}</div>
     <div>{{school.age}}</div>
+    <!-- 如果数据不变化 视图就不刷新 -->
+    {{getNewName}}
     <ul>
       <li>1</li>
       <li>2</li>
     </ul>
+    <button v-on:click="change">更新数据</button>
+    <div v-html="message"></div>
   </div>
   <script src="mvvm.js"></script>
   <script>
     let vm = new Vue({
-      el:'#app',
-      data:{
-        school:{
-          name:'yooo~',
-          age:2
+      el: '#app',
+      data: {
+        school: {
+          name: 'yooo~',
+          age: 2
+        },
+        message: '<h2>葛大爷练过气功</h2>'
+      },
+      methods: {
+        change() {
+          this.school.name = "ye!!!!";
         }
       },
-      methods:{},
-      computed:{}
+      computed: {
+        getNewName() {
+          return this.school.name + "xxx";
+        }
+      }
 
     })
   </script>
 
-  
+
 </body>
+
 </html>
